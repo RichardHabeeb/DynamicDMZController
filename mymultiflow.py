@@ -1,14 +1,14 @@
 
-#--------------------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------
 # FILE:             mymultiflow.py
 # DESCRIPTION:      Size-Based Dynamic DMZ OpenFlow Controller
 # AUTHORS:          Haotian Wu, Richard Habeeb
-#--------------------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------
 
 
-#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------
 # IMPORTS
-#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------
 from pox.core import core
 from pox.openflow import *
 from pox.lib.addresses import *
@@ -22,17 +22,17 @@ import datetime
 import threading
 
 
-#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------
 # CONSTANTS
-#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------
 FLOW_STATS_INTERVAL_SECS = 2
-THRESHOLD_IN_KBPS = 50000/8
+THRESHOLD_IN_KBPS = 50000 / 8
 FLOW_ENTRY_IDLE_TIMEOUT_SECS = 10
 FLOW_ENTRY_HARD_TIMEOUT_SECS = 800
 
-#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------
 # VARIABLES
-#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------
 log = core.getLogger()
 # We don't want to flood immediately when a switch connects.
 # Can be overriden on commandline.
@@ -40,12 +40,12 @@ _flood_delay = 0
 
 
 class LearningSwitch (object):
-    def __init__ (self, connection, transparent, dpi_port):
+    def __init__(self, connection, transparent, dpi_port):
         # Switch we'll be adding L2 learning switch capabilities to
         self.connection = connection
         self.transparent = transparent
         self.dpi_port = dpi_port
-        self._flowstats={}
+        self._flowstats = {}
         # Our table
         self.macToPort = {}
 
@@ -57,10 +57,12 @@ class LearningSwitch (object):
         self.hold_down_expired = _flood_delay == 0
 
         self._statistic()
-        core.openflow.addListenerByName("FlowStatsReceived", self.handle_flow_stats)
-        #log.debug("Initializing LearningSwitch, transparent=%s",
+        core.openflow.addListenerByName(
+            "FlowStatsReceived", self.handle_flow_stats)
+        # log.debug("Initializing LearningSwitch, transparent=%s",
         #          str(self.transparent))
 
+        log.debug("Started Switch.")
 
     def _statistic(self):
         print datetime.datetime.now()
@@ -70,31 +72,34 @@ class LearningSwitch (object):
 
     def handle_flow_stats(self, event):
         self._dpi_port = getOpenFlowPort(self.connection, self.dpi_port)
-        self._cur_flow={}
+        self._cur_flow = {}
 
         for f in event.stats:
-            log.debug("Source: %s->%s %s->%s Flow: %d" % (f.match.nw_src, f.match.nw_dst, f.match.tp_src, f.match.tp_dst, f.byte_count))
+            log.debug("Source: %s->%s %s->%s Flow: %d" % (f.match.nw_src,
+                                                          f.match.nw_dst, f.match.tp_src, f.match.tp_dst, f.byte_count))
 
             if f.match.in_port == self._dpi_port:
                 continue
-            key = (f.match.nw_src,f.match.nw_dst,f.match.tp_src,f.match.tp_dst)
+            key = (f.match.nw_src, f.match.nw_dst,
+                   f.match.tp_src, f.match.tp_dst)
             if (key in self._cur_flow):
                 self._cur_flow[key] = self._cur_flow[key] + f.byte_count
             else:
                 self._cur_flow[key] = f.byte_count
 
-            if (key in self._flowstats and ((self._cur_flow[key]-self._flowstats[key])/FLOW_STATS_INTERVAL_SECS>THRESHOLD_IN_KBPS*1024 or (self._cur_flow[key]<self._flowstats[key] and self._cur_flow[key]/FLOW_STATS_INTERVAL_SECS>THRESHOLD_IN_KBPS*1024))) or ((key not in self._flowstats) and (self._cur_flow[key]/FLOW_STATS_INTERVAL_SECS>THRESHOLD_IN_KBPS*1024)): #If Elephant flow is detected
+            # If Elephant flow is detected
+            if (key in self._flowstats and ((self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024 or (self._cur_flow[key] < self._flowstats[key] and self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024))) or ((key not in self._flowstats) and (self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
 
-                if (key in self._flowstats and ((self._cur_flow[key]-self._flowstats[key])/FLOW_STATS_INTERVAL_SECS>THRESHOLD_IN_KBPS*1024)):
+                if (key in self._flowstats and ((self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
                     print 111111111111111111111111111111
-                elif (key in self._flowstats and  (self._cur_flow[key]<self._flowstats[key] and self._cur_flow[key]/FLOW_STATS_INTERVAL_SECS>THRESHOLD_IN_KBPS*1024)):
+                elif (key in self._flowstats and (self._cur_flow[key] < self._flowstats[key] and self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
                     print "_cur_flow", self._cur_flow[key]
-                    print "_flowstats",self._flowstats[key]
-                elif ((key not in self._flowstats) and (self._cur_flow[key]/FLOW_STATS_INTERVAL_SECS>THRESHOLD_IN_KBPS*1024)):
+                    print "_flowstats", self._flowstats[key]
+                elif ((key not in self._flowstats) and (self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
                     print 333333333333333333333333333333
 
                 msg = of.ofp_flow_mod()
-                #msg.match=of.ofp_match()
+                # msg.match=of.ofp_match()
                 #msg.match.dl_src = f.match.dl_src
                 #msg.match.dl_dst = f.match.dl_dst
                 #msg.match.nw_src = f.match.nw_src
@@ -106,60 +111,62 @@ class LearningSwitch (object):
                 msg.hard_timeout = 800
                 msg.priority = 10000
                 if f.match.dl_dst in self.macToPort:
-                    msg.actions.append(of.ofp_action_output(port = self.macToPort[f.match.dl_dst]))
+                    msg.actions.append(of.ofp_action_output(
+                        port=self.macToPort[f.match.dl_dst]))
                     log.debug("ELEPHANT FLOW REROUTED!")
                 else:
-                    msg.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
+                    msg.actions.append(
+                        of.ofp_action_output(port=of.OFPP_FLOOD))
                 #msg.match.in_port = self._dpi_port
-                #log.debug(msg.match)
+                # log.debug(msg.match)
                 #msg.command = of.OFPFC_DELETE
-                #self.connection.send(msg)
+                # self.connection.send(msg)
                 msg.command = of.OFPFC_MODIFY
                 #msg.match.wildcards = msg.match.wildcards | 0x01
                 log.debug(msg.match)
                 self.connection.send(msg)
                 log.debug(msg)
-        self._flowstats=self._cur_flow
+        self._flowstats = self._cur_flow
 
+    def _handle_PacketIn(self, event):
+        packet = event.parsed
 
-  def _handle_PacketIn (self, event):
-    """
-    Handle packet in messages from the switch to implement above algorithm.
-    """
-    packet = event.parsed
+        log.debug("Received new packet.")
 
-    def flood (message = None):
-        """ Floods the packet """
-        msg = of.ofp_packet_out()
-        if time.time() - self.connection.connect_time >= _flood_delay:
-            # Only flood if we've been connected for a little while...
+        def flood(message=None):
+            """ Floods the packet """
+            msg = of.ofp_packet_out()
+            if time.time() - self.connection.connect_time >= _flood_delay:
+                # Only flood if we've been connected for a little while...
 
-            if self.hold_down_expired is False:
-                # Oh yes it is!
-                self.hold_down_expired = True
-                log.info("%s: Flood hold-down expired -- flooding", dpid_to_str(event.dpid))
+                if self.hold_down_expired is False:
+                    # Oh yes it is!
+                    self.hold_down_expired = True
+                    log.info("%s: Flood hold-down expired -- flooding",
+                             dpid_to_str(event.dpid))
 
                 if message is not None:
                     log.debug(message)
                 #log.debug("%i: flood %s -> %s", event.dpid,packet.src,packet.dst)
                 # OFPP_FLOOD is optional; on some switches you may need to change
                 # this to OFPP_ALL.
-                msg.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
+                msg.actions.append(
+                    of.ofp_action_output(port=of.OFPP_FLOOD))
             else:
                 pass
                 #log.info("Holding down flood for %s", dpid_to_str(event.dpid))
-                msg.data = event.ofp
-                msg.in_port = event.port
-                self.connection.send(msg)
+            msg.data = event.ofp
+            msg.in_port = event.port
+            self.connection.send(msg)
 
-        def drop (duration = None):
+        def drop(duration=None):
             """
             Drops this packet and optionally installs a flow to continue
             dropping similar ones for a while
             """
             if duration is not None:
                 if not isinstance(duration, tuple):
-                    duration = (duration,duration)
+                    duration = (duration, duration)
                     msg = of.ofp_flow_mod()
                     msg.match = of.ofp_match.from_packet(packet)
                     msg.idle_timeout = duration[0]
@@ -177,12 +184,13 @@ class LearningSwitch (object):
 
         if event.port != self._dpi_port:
             self.macToPort[packet.src] = event.port
-            log.debug("Redirecting to DPI for %s.%i -> %s" % (packet.src, event.port, packet.dst))
+            log.debug("Redirecting to DPI for %s.%i -> %s" %
+                      (packet.src, event.port, packet.dst))
             msg = of.ofp_flow_mod()
             msg.match = of.ofp_match.from_packet(packet, event.port)
             msg.idle_timeout = FLOW_ENTRY_IDLE_TIMEOUT_SECS
             msg.hard_timeout = FLOW_ENTRY_HARD_TIMEOUT_SECS
-            msg.actions.append(of.ofp_action_output(port = self._dpi_port))
+            msg.actions.append(of.ofp_action_output(port=self._dpi_port))
             msg.data = event.ofp
             self.connection.send(msg)
             return
@@ -200,42 +208,45 @@ class LearningSwitch (object):
             else:
                 port = self.macToPort[packet.dst]
                 if port == event.port:
-                    log.warning("Same port for packet from %s -> %s on %s.%s.  Drop." % (packet.src, packet.dst, dpid_to_str(event.dpid), port))
+                    log.warning("Same port for packet from %s -> %s on %s.%s.  Drop." %
+                                (packet.src, packet.dst, dpid_to_str(event.dpid), port))
                     return
 
-                log.debug("installing flow for %s.%i -> %s.%i" % (packet.src, event.port, packet.dst, port))
+                log.debug("installing flow for %s.%i -> %s.%i" %
+                          (packet.src, event.port, packet.dst, port))
                 msg = of.ofp_flow_mod()
                 msg.match = of.ofp_match.from_packet(packet, event.port)
                 msg.idle_timeout = FLOW_ENTRY_IDLE_TIMEOUT_SECS
                 msg.hard_timeout = FLOW_ENTRY_HARD_TIMEOUT_SECS
-                msg.actions.append(of.ofp_action_output(port = port))
+                msg.actions.append(of.ofp_action_output(port=port))
                 msg.data = event.ofp
                 self.connection.send(msg)
 
 
 class l2_learning (object):
-  """
-  Waits for OpenFlow switches to connect and makes them learning switches.
-  """
-  def __init__ (self, transparent, dpi_port):
-    core.openflow.addListeners(self)
-    self.transparent = transparent
-    self.dpi_port = dpi_port
+    """
+    Waits for OpenFlow switches to connect and makes them learning switches.
+    """
 
-  def _handle_ConnectionUp (self, event):
-    log.debug("Connection %s" % (event.connection,))
-    LearningSwitch(event.connection, self.transparent, self.dpi_port)
+    def __init__(self, transparent, dpi_port):
+        core.openflow.addListeners(self)
+        self.transparent = transparent
+        self.dpi_port = dpi_port
+
+    def _handle_ConnectionUp(self, event):
+        log.debug("Connection %s" % (event.connection,))
+        LearningSwitch(event.connection, self.transparent, self.dpi_port)
 
 
+def launch(transparent=False, hold_down=_flood_delay, dpi_port='eth0'):
+    """
+    Starts an L2 learning switch.
+    """
+    try:
+        global _flood_delay
+        _flood_delay = int(str(hold_down), 10)
+        assert _flood_delay >= 0
+    except:
+        raise RuntimeError("Expected hold-down to be a number")
 
-def launch (transparent=False, hold_down=_flood_delay, dpi_port='eth0'):
-  """
-  Starts an L2 learning switch.
-  """
-  try:
-    global _flood_delay
-    _flood_delay = int(str(hold_down), 10)
-    assert _flood_delay >= 0
-  except:
-    raise RuntimeError("Expected hold-down to be a number")
-  core.registerNew(l2_learning, str_to_bool(transparent), dpi_port)
+    core.registerNew(l2_learning, str_to_bool(transparent), dpi_port)
