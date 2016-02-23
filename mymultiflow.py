@@ -54,13 +54,7 @@ class SizeBasedDynamicDmzSwitch (object):
         # Our table
         self.macToPort = {}
 
-        app = Flask(__name__)
 
-        @app.route("/")
-        def hello():
-            return "Hello World!"
-
-        app.run()
 
         # We want to hear PacketIn messages, so we listen
         # to the connection
@@ -76,6 +70,21 @@ class SizeBasedDynamicDmzSwitch (object):
         #          str(self.transparent))
 
         log.debug("Started Switch.")
+
+        threading.Thread(target=webserver_worker).start()
+
+    def webserver_worker():
+        app = Flask(__name__)
+
+        @app.route("/")
+        def hello():
+            return "Hello World!"
+
+        @app.route("/data")
+        def data():
+            return self._flowstats
+
+        app.run()
 
     def _statistic(self):
         print datetime.datetime.now()
