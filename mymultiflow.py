@@ -39,7 +39,7 @@ log = core.getLogger()
 _flood_delay = 0
 
 
-class LearningSwitch (object):
+class SizeBasedDynamicDmzSwitch (object):
     def __init__(self, connection, transparent, dpi_port):
         # Switch we'll be adding L2 learning switch capabilities to
         self.connection = connection
@@ -59,7 +59,7 @@ class LearningSwitch (object):
         self._statistic()
         core.openflow.addListenerByName(
             "FlowStatsReceived", self.handle_flow_stats)
-        # log.debug("Initializing LearningSwitch, transparent=%s",
+        # log.debug("Initializing SizeBasedDynamicDmzSwitch, transparent=%s",
         #          str(self.transparent))
 
         log.debug("Started Switch.")
@@ -91,11 +91,7 @@ class LearningSwitch (object):
                     f.match.tp_src, f.match.tp_dst)
 
             # Store number of bytes transmitted by the flow in total.
-            if (key in self._cur_flow):
-                print ">>>!!!Does this condition occur???"
-                self._cur_flow[key] = self._cur_flow[key] + f.byte_count
-            else:
-                self._cur_flow[key] = f.byte_count
+            self._cur_flow[key] = f.byte_count
 
             # Compute the transmission_rate
             transmission_rate_mbps = 0
@@ -106,14 +102,6 @@ class LearningSwitch (object):
 
             # If Elephant flow is detected
             if transmission_rate_mbps > THRESHOLD_IN_KBPS * 1024:
-
-                # if (key in self._flowstats and ((self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
-                #     print 111111111111111111111111111111
-                # elif (key in self._flowstats and (self._cur_flow[key] < self._flowstats[key] and self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
-                #     print "_cur_flow", self._cur_flow[key]
-                #     print "_flowstats", self._flowstats[key]
-                # elif ((key not in self._flowstats) and (self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
-                #     print 333333333333333333333333333333
 
                 msg = of.ofp_flow_mod()
                 msg.match = f.match
@@ -129,9 +117,8 @@ class LearningSwitch (object):
                         of.ofp_action_output(port=of.OFPP_FLOOD))
 
                 msg.command = of.OFPFC_MODIFY
-                #log.debug(msg.match)
                 self.connection.send(msg)
-                #log.debug(msg)
+
         self._flowstats = self._cur_flow
 
     def _handle_PacketIn(self, event):
@@ -239,7 +226,7 @@ class l2_learning (object):
 
     def _handle_ConnectionUp(self, event):
         log.debug("Connection %s" % (event.connection,))
-        LearningSwitch(event.connection, self.transparent, self.dpi_port)
+        SizeBasedDynamicDmzSwitch(event.connection, self.transparent, self.dpi_port)
 
 
 def launch(transparent=False, hold_down=_flood_delay, dpi_port='eth0'):
