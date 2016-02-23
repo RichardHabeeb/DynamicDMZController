@@ -74,41 +74,51 @@ class LearningSwitch (object):
         self._dpi_port = getOpenFlowPort(self.connection, self.dpi_port)
         self._cur_flow = {}
 
+        #look through all flows and look for elephant flows
         for f in event.stats:
-            log.debug("Source: %s->%s %s->%s Flow: %d" % (f.match.nw_src,
-                                                          f.match.nw_dst, f.match.tp_src, f.match.tp_dst, f.byte_count))
+            log.debug("Source: %s->%s %s->%s Bytes: %d" % (f.match.nw_src,
+                                                          f.match.nw_dst,
+                                                          f.match.tp_src,
+                                                          f.match.tp_dst,
+                                                          f.byte_count))
 
+            #Do not look for elephant flows coming from the DPI.
             if f.match.in_port == self._dpi_port:
                 continue
+
+            #Create an identification key for this flow using the send/recieve ports and
             key = (f.match.nw_src, f.match.nw_dst,
-                   f.match.tp_src, f.match.tp_dst)
+                    f.match.tp_src, f.match.tp_dst)
+
+            # Store number of bytes transmitted by the flow in total.
             if (key in self._cur_flow):
+                print ">>>!!!Does this condition occur???"
                 self._cur_flow[key] = self._cur_flow[key] + f.byte_count
             else:
                 self._cur_flow[key] = f.byte_count
 
-            # If Elephant flow is detected
-            if (key in self._flowstats and ((self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024 or (self._cur_flow[key] < self._flowstats[key] and self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024))) or ((key not in self._flowstats) and (self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
+            # Compute the transmission_rate
+            transmission_rate_mbps = 0
+            if(key in self._flowstats and self._cur_flow[key] < self._flowstats[key]):
+                transmission_rate_mbps = (self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS
+            else:
+                transmission_rate_mbps = self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS
 
-                if (key in self._flowstats and ((self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
-                    print 111111111111111111111111111111
-                elif (key in self._flowstats and (self._cur_flow[key] < self._flowstats[key] and self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
-                    print "_cur_flow", self._cur_flow[key]
-                    print "_flowstats", self._flowstats[key]
-                elif ((key not in self._flowstats) and (self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
-                    print 333333333333333333333333333333
+            # If Elephant flow is detected
+            if transmission_rate_mbps > THRESHOLD_IN_KBPS * 1024:
+
+                # if (key in self._flowstats and ((self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
+                #     print 111111111111111111111111111111
+                # elif (key in self._flowstats and (self._cur_flow[key] < self._flowstats[key] and self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
+                #     print "_cur_flow", self._cur_flow[key]
+                #     print "_flowstats", self._flowstats[key]
+                # elif ((key not in self._flowstats) and (self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS > THRESHOLD_IN_KBPS * 1024)):
+                #     print 333333333333333333333333333333
 
                 msg = of.ofp_flow_mod()
-                # msg.match=of.ofp_match()
-                #msg.match.dl_src = f.match.dl_src
-                #msg.match.dl_dst = f.match.dl_dst
-                #msg.match.nw_src = f.match.nw_src
-                #msg.match.nw_dst = f.match.nw_dst
-                #msg.match.tp_src = f.match.tp_src
-                #msg.match.tp_dst = f.match.tp_dst
                 msg.match = f.match
-                msg.idle_timeout = 10
-                msg.hard_timeout = 800
+                msg.idle_timeout = FLOW_ENTRY_IDLE_TIMEOUT_SECS
+                msg.hard_timeout = FLOW_ENTRY_HARD_TIMEOUT_SECS
                 msg.priority = 10000
                 if f.match.dl_dst in self.macToPort:
                     msg.actions.append(of.ofp_action_output(
@@ -117,21 +127,15 @@ class LearningSwitch (object):
                 else:
                     msg.actions.append(
                         of.ofp_action_output(port=of.OFPP_FLOOD))
-                #msg.match.in_port = self._dpi_port
-                # log.debug(msg.match)
-                #msg.command = of.OFPFC_DELETE
-                # self.connection.send(msg)
+
                 msg.command = of.OFPFC_MODIFY
-                #msg.match.wildcards = msg.match.wildcards | 0x01
-                log.debug(msg.match)
+                #log.debug(msg.match)
                 self.connection.send(msg)
-                log.debug(msg)
+                #log.debug(msg)
         self._flowstats = self._cur_flow
 
     def _handle_PacketIn(self, event):
         packet = event.parsed
-
-        log.debug("Received new packet.")
 
         def flood(message=None):
             """ Floods the packet """
