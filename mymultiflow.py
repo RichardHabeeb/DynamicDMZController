@@ -15,6 +15,7 @@ from pox.lib.util import dpid_to_str
 from pox.lib.util import str_to_bool
 import pox.openflow.libopenflow_01 as of
 from flask import Flask
+import json
 
 from utils import *
 import time
@@ -71,9 +72,9 @@ class SizeBasedDynamicDmzSwitch (object):
 
         log.debug("Started Switch.")
 
-        threading.Thread(target=webserver_worker).start()
+        threading.Thread(target=self.webserver_worker).start()
 
-    def webserver_worker():
+    def webserver_worker(self):
         app = Flask(__name__)
 
         @app.route("/")
@@ -82,7 +83,7 @@ class SizeBasedDynamicDmzSwitch (object):
 
         @app.route("/data")
         def data():
-            return self._flowstats
+            return json.dumps(self._flowstats)
 
         app.run()
 
