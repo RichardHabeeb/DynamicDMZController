@@ -83,7 +83,8 @@ class SizeBasedDynamicDmzSwitch (object):
 
         @app.route("/data")
         def data():
-            return json.dumps(self._flowstats)
+            #convert tuples to strings and send
+            return json.dumps({str(k): v for k, v in self._flowstats.iteritems()})
 
         app.run()
 
