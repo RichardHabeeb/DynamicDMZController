@@ -52,6 +52,7 @@ class SizeBasedDynamicDmzSwitch (object):
         self.transparent = transparent
         self.dpi_port = dpi_port
         self._flowstats = {}
+        self._flow_bandwidths = {}
         # Our table
         self.macToPort = {}
 
@@ -84,7 +85,7 @@ class SizeBasedDynamicDmzSwitch (object):
         @app.route("/data")
         def data():
             #convert tuples to strings and send
-            return json.dumps({str(k): v for k, v in self._flowstats.iteritems()})
+            return json.dumps({str(k): v for k, v in self._flow_bandwidths.iteritems()})
 
         app.run()
 
@@ -97,6 +98,7 @@ class SizeBasedDynamicDmzSwitch (object):
     def handle_flow_stats(self, event):
         self._dpi_port = getOpenFlowPort(self.connection, self.dpi_port)
         self._cur_flow = {}
+        self._flow_bandwidths.clear()
 
         # look through all flows and look for elephant flows
         for f in event.stats:
@@ -124,6 +126,8 @@ class SizeBasedDynamicDmzSwitch (object):
                 transmission_rate_mbps = (self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS
             else:
                 transmission_rate_mbps = self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS
+
+            self._flow_bandwidths[key] = transmission_rate_mbps
 
             # If Elephant flow is detected
             if transmission_rate_mbps > THRESHOLD_IN_KBPS * 1024:
