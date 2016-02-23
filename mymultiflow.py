@@ -5,7 +5,6 @@
 # AUTHORS:          Haotian Wu, Richard Habeeb
 #-------------------------------------------------------------------------
 
-
 #-------------------------------------------------------------------------
 # IMPORTS
 #-------------------------------------------------------------------------
@@ -15,6 +14,7 @@ from pox.lib.addresses import *
 from pox.lib.util import dpid_to_str
 from pox.lib.util import str_to_bool
 import pox.openflow.libopenflow_01 as of
+from flask import Flask
 
 from utils import *
 import time
@@ -33,10 +33,14 @@ FLOW_ENTRY_HARD_TIMEOUT_SECS = 800
 #-------------------------------------------------------------------------
 # VARIABLES
 #-------------------------------------------------------------------------
+
 log = core.getLogger()
 # We don't want to flood immediately when a switch connects.
 # Can be overriden on commandline.
 _flood_delay = 0
+
+
+
 
 
 class SizeBasedDynamicDmzSwitch (object):
@@ -49,6 +53,14 @@ class SizeBasedDynamicDmzSwitch (object):
         self._flowstats = {}
         # Our table
         self.macToPort = {}
+
+        app = Flask(__name__)
+
+        @app.route("/")
+        def hello():
+            return "Hello World!"
+
+        app.run()
 
         # We want to hear PacketIn messages, so we listen
         # to the connection
@@ -97,7 +109,7 @@ class SizeBasedDynamicDmzSwitch (object):
 
             # Compute the transmission_rate
             transmission_rate_mbps = 0
-            if(key in self._flowstats and self._cur_flow[key] < self._flowstats[key]):
+            if(key in self._flowstats and self._cur_flow[key] > self._flowstats[key]):
                 transmission_rate_mbps = (self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS
             else:
                 transmission_rate_mbps = self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS
