@@ -40,6 +40,7 @@ _flood_delay = 0
 
 
 class SizeBasedDynamicDmzSwitch (object):
+
     def __init__(self, connection, transparent, dpi_port):
         # Switch we'll be adding L2 learning switch capabilities to
         self.connection = connection
@@ -74,21 +75,22 @@ class SizeBasedDynamicDmzSwitch (object):
         self._dpi_port = getOpenFlowPort(self.connection, self.dpi_port)
         self._cur_flow = {}
 
-        #look through all flows and look for elephant flows
+        # look through all flows and look for elephant flows
         for f in event.stats:
             log.debug("Source: %s->%s %s->%s Bytes: %d" % (f.match.nw_src,
-                                                          f.match.nw_dst,
-                                                          f.match.tp_src,
-                                                          f.match.tp_dst,
-                                                          f.byte_count))
+                                                           f.match.nw_dst,
+                                                           f.match.tp_src,
+                                                           f.match.tp_dst,
+                                                           f.byte_count))
 
-            #Do not look for elephant flows coming from the DPI.
+            # Do not look for elephant flows coming from the DPI.
             if f.match.in_port == self._dpi_port:
                 continue
 
-            #Create an identification key for this flow using the send/recieve ports and
+            # Create an identification key for this flow using the send/recieve
+            # ports and
             key = (f.match.nw_src, f.match.nw_dst,
-                    f.match.tp_src, f.match.tp_dst)
+                   f.match.tp_src, f.match.tp_dst)
 
             # Store number of bytes transmitted by the flow in total.
             self._cur_flow[key] = f.byte_count
