@@ -27,7 +27,7 @@ import threading
 #-------------------------------------------------------------------------
 # CONSTANTS
 #-------------------------------------------------------------------------
-FLOW_STATS_INTERVAL_SECS = 2
+FLOW_STATS_INTERVAL_SECS = 1
 THRESHOLD_IN_KBPS = 50 * 1024 / 8
 FLOW_ENTRY_IDLE_TIMEOUT_SECS = 10
 FLOW_ENTRY_HARD_TIMEOUT_SECS = 800
@@ -66,7 +66,7 @@ class Flow(object):
             self.transport_layer_dst = match.tp_dst
             self.hardware_port = match.in_port
 
-        self.bit_rates = [0] * RUNNING_AVERAGE_WINDOW
+        self.bit_rates = [0] * Flow.RUNNING_AVERAGE_WINDOW
         self.running_bit_rate_sum = 0
         self.total_bytes = 0
 
@@ -85,7 +85,7 @@ class Flow(object):
                self.tranport_layer_src, self.tranport_layer_dst, self.hardware_port)
 
     def get_average_bit_rate(self):
-        return self.running_bit_rate_sum / RUNNING_AVERAGE_WINDOW
+        return self.running_bit_rate_sum / Flow.RUNNING_AVERAGE_WINDOW
 
     def add_bit_rate(self, new_rate):
         self.running_bit_rate_sum += new_rate - self.bit_rates.pop(0)
@@ -140,24 +140,16 @@ class SizeBasedDynamicDmzSwitch (object):
         app.run(host='0.0.0.0')
 
     def _statistic(self):
-        print datetime.datetime.now()
         for con in core.openflow.connections:
             con.send(of.ofp_stats_request(body=of.ofp_flow_stats_request()))
         threading.Timer(FLOW_STATS_INTERVAL_SECS, self._statistic).start()
 
     def handle_flow_stats(self, event):
         self._dpi_port = getOpenFlowPort(self.connection, self.dpi_port)
-        self._cur_flow = {}
         self._flow_bandwidths.clear()
 
         # look through all flows and look for elephant flows
         for f in event.stats:
-            # log.debug("Source: %s->%s %s->%s, Inport: %d, Bytes: %d" % (f.match.nw_src,
-            #                                                             f.match.nw_dst,
-            #                                                             f.match.tp_src,
-            #                                                             f.match.tp_dst,
-            #                                                             f.match.in_port,
-            #                                                             f.byte_count))
 
             # Create an identification key for this flow using the send/recieve
             # ports and
@@ -170,23 +162,15 @@ class SizeBasedDynamicDmzSwitch (object):
             current_flow = self.flows[key]
             current_flow.update_total_bytes_transferred(f.byte_count)
 
+            transmission_rate_kbps = current_flow.get_average_bit_rate()
+
             log.debug("Source: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %d" % (current_flow.network_layer_src,
                                                                         current_flow.network_layer_src,
                                                                         current_flow.transport_layer_src,
                                                                         current_flow.transport_layer_dst,
                                                                         current_flow.hardware_port,
                                                                         current_flow.total_bytes,
-                                                                        current_flow.get_average_bit_rate()))
-
-            # Store number of bytes transmitted by the flow in total.
-            self._cur_flow[key] = f.byte_count
-
-            # Compute the transmission_rate
-            transmission_rate_kbps = 0
-            if(key in self._flowstats and self._cur_flow[key] >= self._flowstats[key]):
-                transmission_rate_kbps = (self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS
-            else:
-                transmission_rate_kbps = self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS
+                                                                        transmission_rate_kbps * 8 / 1024 / 1024))
 
             self._flow_bandwidths[key] = transmission_rate_kbps
 
@@ -196,7 +180,6 @@ class SizeBasedDynamicDmzSwitch (object):
 
             # If Elephant flow is detected
             if transmission_rate_kbps > THRESHOLD_IN_KBPS:
-
                 msg = of.ofp_flow_mod()
                 msg.match = f.match
                 msg.idle_timeout = FLOW_ENTRY_IDLE_TIMEOUT_SECS
@@ -212,8 +195,6 @@ class SizeBasedDynamicDmzSwitch (object):
 
                 msg.command = of.OFPFC_MODIFY
                 self.connection.send(msg)
-
-        self._flowstats = self._cur_flow
 
     def _handle_PacketIn(self, event):
         packet = event.parsed
