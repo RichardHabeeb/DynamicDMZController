@@ -6,7 +6,6 @@
 <script src='https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.js'></script>
 
 <script>
-//var max_time = 10;
 var current_time = 0;
 var running_data = {}; //array of arrays of x,y coords
 var interval = 200; //millisecond
@@ -16,11 +15,8 @@ function get_data() {
 		var raw_data = JSON.parse(data);
 		for (var key in raw_data) {
 			if (raw_data.hasOwnProperty(key)) {
-//				console.log(key, raw_data[key]);
-				
 				if(typeof(running_data[key]) === "undefined") running_data[key] = []
 					running_data[key].push([current_time, raw_data[key]*8/1024.0/1024/1024]);
-				
 			}
 		}
 	});
@@ -33,14 +29,9 @@ function get_data() {
 	for (var v in values) {
 		data1 = {data:values[v], color:c[v]};
 		data.push(data1);
-//		console.log(values[v]);
 	}
 	$.plot("#placeholder", data);
 	current_time+=(interval/1000.0);
-//	if(current_time > max_time) {
-//		current_time = 0;
-//		running_data = {};
-//	}
 	setTimeout(get_data, interval);
 }
 setTimeout(get_data, interval);
@@ -57,4 +48,3 @@ setTimeout(get_data, interval);
 </div>
 </body>
 </html>
-

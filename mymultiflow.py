@@ -28,21 +28,73 @@ import threading
 # CONSTANTS
 #-------------------------------------------------------------------------
 FLOW_STATS_INTERVAL_SECS = 2
-THRESHOLD_IN_KBPS = 50000 / 8
+THRESHOLD_IN_KBPS = 50 * 1024 / 8
 FLOW_ENTRY_IDLE_TIMEOUT_SECS = 10
 FLOW_ENTRY_HARD_TIMEOUT_SECS = 800
 
 #-------------------------------------------------------------------------
 # VARIABLES
 #-------------------------------------------------------------------------
-
 log = core.getLogger()
 # We don't want to flood immediately when a switch connects.
 # Can be overriden on commandline.
 _flood_delay = 0
 
+#-------------------------------------------------------------------------
+# CLASSES
+#-------------------------------------------------------------------------
 
 
+class Flow(object):
+    RUNNING_AVERAGE_WINDOW = 5
+
+    def __init__(self, match=None):
+        self.network_layer_src = None
+        self.network_layer_dst = None
+        self.transport_layer_src = None
+        self.transport_layer_dst = None
+        self.hardware_port = None
+        if(match is not None and \
+            hasattr(match, 'nw_src') and \
+            hasattr(match, 'nw_dst') and \
+            hasattr(match, 'tp_src') and \
+            hasattr(match, 'tp_dst') and \
+            hasattr(match, 'in_port')):
+            self.network_layer_src = match.nw_src
+            self.network_layer_dst = match.nw_src
+            self.transport_layer_src = match.tp_src
+            self.transport_layer_dst = match.tp_dst
+            self.hardware_port = match.in_port
+
+        self.bit_rates = [0] * RUNNING_AVERAGE_WINDOW
+        self.running_bit_rate_sum = 0
+        self.total_bytes = 0
+
+    def __eq__(self, other):
+        if other == None:
+            return False
+        return \
+            self.network_layer_src == other.network_layer_src and \
+            self.network_layer_dst == other.network_layer_dst and \
+            self.tranport_layer_src == other.tranport_layer_src and \
+            self.tranport_layer_dst == other.tranport_layer_dst and \
+            self.hardware_port == other.hardware_port
+
+    def get_key(self):
+        return (self.network_layer_src, self.network_layer_dst,
+               self.tranport_layer_src, self.tranport_layer_dst, self.hardware_port)
+
+    def get_average_bit_rate(self):
+        return self.running_bit_rate_sum / RUNNING_AVERAGE_WINDOW
+
+    def add_bit_rate(self, new_rate):
+        self.running_bit_rate_sum += new_rate - self.bit_rates.pop(0)
+        self.bit_rates.append(new_rate)
+
+    def update_total_bytes_transferred(self, new_total):
+        transmission_rate = (new_total - self.total_bytes) / FLOW_STATS_INTERVAL_SECS
+        self.total_bytes = new_total
+        self.add_bit_rate(transmission_rate)
 
 
 class SizeBasedDynamicDmzSwitch (object):
@@ -56,8 +108,7 @@ class SizeBasedDynamicDmzSwitch (object):
         self._flow_bandwidths = {}
         # Our table
         self.macToPort = {}
-
-
+        self.flows = {}
 
         # We want to hear PacketIn messages, so we listen
         # to the connection
@@ -69,8 +120,6 @@ class SizeBasedDynamicDmzSwitch (object):
         self._statistic()
         core.openflow.addListenerByName(
             "FlowStatsReceived", self.handle_flow_stats)
-        # log.debug("Initializing SizeBasedDynamicDmzSwitch, transparent=%s",
-        #          str(self.transparent))
 
         log.debug("Started Switch.")
 
@@ -85,7 +134,7 @@ class SizeBasedDynamicDmzSwitch (object):
 
         @app.route("/data")
         def data():
-            #convert tuples to strings and send
+            # convert tuples to strings and send
             return json.dumps({str(k): v for k, v in self._flow_bandwidths.iteritems()})
 
         app.run(host='0.0.0.0')
@@ -103,37 +152,50 @@ class SizeBasedDynamicDmzSwitch (object):
 
         # look through all flows and look for elephant flows
         for f in event.stats:
-            log.debug("Source: %s->%s %s->%s, Inport: %d, Bytes: %d" % (f.match.nw_src,
-                                                                        f.match.nw_dst,
-                                                                        f.match.tp_src,
-                                                                        f.match.tp_dst,
-                                                                        f.match.in_port,
-                                                                        f.byte_count))
-
+            # log.debug("Source: %s->%s %s->%s, Inport: %d, Bytes: %d" % (f.match.nw_src,
+            #                                                             f.match.nw_dst,
+            #                                                             f.match.tp_src,
+            #                                                             f.match.tp_dst,
+            #                                                             f.match.in_port,
+            #                                                             f.byte_count))
 
             # Create an identification key for this flow using the send/recieve
             # ports and
             key = (f.match.nw_src, f.match.nw_dst,
                    f.match.tp_src, f.match.tp_dst, f.match.in_port)
 
+            if(key not in self.flows):
+                self.flows[key] = Flow(f.match)
+
+            current_flow = self.flows[key]
+            current_flow.update_total_bytes_transferred(f.byte_count)
+
+            log.debug("Source: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %d" % (current_flow.network_layer_src,
+                                                                        current_flow.network_layer_src,
+                                                                        current_flow.transport_layer_src,
+                                                                        current_flow.transport_layer_dst,
+                                                                        current_flow.hardware_port,
+                                                                        current_flow.total_bytes,
+                                                                        current_flow.get_average_bit_rate()))
+
             # Store number of bytes transmitted by the flow in total.
             self._cur_flow[key] = f.byte_count
 
             # Compute the transmission_rate
-            transmission_rate_mbps = 0
+            transmission_rate_kbps = 0
             if(key in self._flowstats and self._cur_flow[key] >= self._flowstats[key]):
-                transmission_rate_mbps = (self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS
+                transmission_rate_kbps = (self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS
             else:
-                transmission_rate_mbps = self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS
+                transmission_rate_kbps = self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS
 
-            self._flow_bandwidths[key] = transmission_rate_mbps
+            self._flow_bandwidths[key] = transmission_rate_kbps
 
             # Do not look for elephant flows coming from the DPI.
             if f.match.in_port == self._dpi_port:
                 continue
 
             # If Elephant flow is detected
-            if transmission_rate_mbps > THRESHOLD_IN_KBPS * 1024:
+            if transmission_rate_kbps > THRESHOLD_IN_KBPS:
 
                 msg = of.ofp_flow_mod()
                 msg.match = f.match
@@ -258,7 +320,8 @@ class l2_learning (object):
 
     def _handle_ConnectionUp(self, event):
         log.debug("Connection %s" % (event.connection,))
-        SizeBasedDynamicDmzSwitch(event.connection, self.transparent, self.dpi_port)
+        SizeBasedDynamicDmzSwitch(
+            event.connection, self.transparent, self.dpi_port)
 
 
 def launch(transparent=False, hold_down=_flood_delay, dpi_port='eth0'):
