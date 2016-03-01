@@ -15,6 +15,7 @@ from pox.lib.util import dpid_to_str
 from pox.lib.util import str_to_bool
 import pox.openflow.libopenflow_01 as of
 from flask import Flask
+from flask import render_template
 import json
 
 from utils import *
@@ -80,14 +81,14 @@ class SizeBasedDynamicDmzSwitch (object):
 
         @app.route("/")
         def hello():
-            return "Hello World!"
+            return render_template("index.html")
 
         @app.route("/data")
         def data():
             #convert tuples to strings and send
             return json.dumps({str(k): v for k, v in self._flow_bandwidths.iteritems()})
 
-        app.run()
+        app.run(host='0.0.0.0')
 
     def _statistic(self):
         print datetime.datetime.now()
@@ -102,32 +103,34 @@ class SizeBasedDynamicDmzSwitch (object):
 
         # look through all flows and look for elephant flows
         for f in event.stats:
-            log.debug("Source: %s->%s %s->%s Bytes: %d" % (f.match.nw_src,
-                                                           f.match.nw_dst,
-                                                           f.match.tp_src,
-                                                           f.match.tp_dst,
-                                                           f.byte_count))
+            log.debug("Source: %s->%s %s->%s, Inport: %d, Bytes: %d" % (f.match.nw_src,
+                                                                        f.match.nw_dst,
+                                                                        f.match.tp_src,
+                                                                        f.match.tp_dst,
+                                                                        f.match.in_port,
+                                                                        f.byte_count))
 
-            # Do not look for elephant flows coming from the DPI.
-            if f.match.in_port == self._dpi_port:
-                continue
 
             # Create an identification key for this flow using the send/recieve
             # ports and
             key = (f.match.nw_src, f.match.nw_dst,
-                   f.match.tp_src, f.match.tp_dst)
+                   f.match.tp_src, f.match.tp_dst, f.match.in_port)
 
             # Store number of bytes transmitted by the flow in total.
             self._cur_flow[key] = f.byte_count
 
             # Compute the transmission_rate
             transmission_rate_mbps = 0
-            if(key in self._flowstats and self._cur_flow[key] > self._flowstats[key]):
+            if(key in self._flowstats and self._cur_flow[key] >= self._flowstats[key]):
                 transmission_rate_mbps = (self._cur_flow[key] - self._flowstats[key]) / FLOW_STATS_INTERVAL_SECS
             else:
                 transmission_rate_mbps = self._cur_flow[key] / FLOW_STATS_INTERVAL_SECS
 
             self._flow_bandwidths[key] = transmission_rate_mbps
+
+            # Do not look for elephant flows coming from the DPI.
+            if f.match.in_port == self._dpi_port:
+                continue
 
             # If Elephant flow is detected
             if transmission_rate_mbps > THRESHOLD_IN_KBPS * 1024:
