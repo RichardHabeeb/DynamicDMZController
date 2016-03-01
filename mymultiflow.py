@@ -104,11 +104,11 @@ class SizeBasedDynamicDmzSwitch (object):
         self.connection = connection
         self.transparent = transparent
         self.dpi_port = dpi_port
-        self._flowstats = {}
         self._flow_bandwidths = {}
         # Our table
         self.macToPort = {}
         self.flows = {}
+        self.dmz_flows = {}
 
         # We want to hear PacketIn messages, so we listen
         # to the connection
@@ -150,18 +150,20 @@ class SizeBasedDynamicDmzSwitch (object):
 
         # look through all flows and look for elephant flows
         for f in event.stats:
-
-            # Create an identification key for this flow using the send/recieve
-            # ports and
+            # Create an identification key for this flow using the send/recieve ports and hardware interface
             key = (f.match.nw_src, f.match.nw_dst,
                    f.match.tp_src, f.match.tp_dst, f.match.in_port)
 
-            if(key not in self.flows):
-                self.flows[key] = Flow(f.match)
+            current_flow = None
+            if key in self.flows:
+                current_flow = self.flows[key]
+            else if key in self.dmz_flows:
+                current_flow = self.dmz_flows[key]
+            else:
+                current_flow = self.flows[key] = Flow(f.match)
 
-            current_flow = self.flows[key]
+
             current_flow.update_total_bytes_transferred(f.byte_count)
-
             transmission_rate_kbps = current_flow.get_average_bit_rate()
 
             log.debug("Source: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %d" % (current_flow.network_layer_src,
@@ -179,7 +181,10 @@ class SizeBasedDynamicDmzSwitch (object):
                 continue
 
             # If Elephant flow is detected
-            if transmission_rate_kbps > THRESHOLD_IN_KBPS:
+            if key not in self.dmz_flows and transmission_rate_kbps > THRESHOLD_IN_KBPS:
+                self.dmz_flows[key] = current_flow
+                del self.flow[key]
+
                 msg = of.ofp_flow_mod()
                 msg.match = f.match
                 msg.idle_timeout = FLOW_ENTRY_IDLE_TIMEOUT_SECS
@@ -194,6 +199,14 @@ class SizeBasedDynamicDmzSwitch (object):
                         of.ofp_action_output(port=of.OFPP_FLOOD))
 
                 msg.command = of.OFPFC_MODIFY
+                self.connection.send(msg)
+            else if key in dmz_flows and transmission_rate_kbps < THRESHOLD_IN_KBPS:
+                self.flows[key] = current_flow
+                del self.dmz_flows[key]
+                msg = of.ofp_flow_mod()
+                msg.match = f.match
+                log.debug("MOUSE FLOW REROUTED!")
+                msg.command = of.OFPFC_DELETE_STRICT
                 self.connection.send(msg)
 
     def _handle_PacketIn(self, event):
