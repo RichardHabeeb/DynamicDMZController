@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<script src='https://code.jquery.com/jquery-2.2.1.min.js'></script>
+<script src='https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.js'></script>
+
+<script>
+//var max_time = 10;
+var current_time = 0;
+var running_data = {}; //array of arrays of x,y coords
+var interval = 200; //millisecond
+
+function get_data() {
+	$.ajax(url='http://129.130.45.205:5000/data').done(function(data) {
+		var raw_data = JSON.parse(data);
+		for (var key in raw_data) {
+			if (raw_data.hasOwnProperty(key)) {
+//				console.log(key, raw_data[key]);
+				
+				if(typeof(running_data[key]) === "undefined") running_data[key] = []
+					running_data[key].push([current_time, raw_data[key]*8/1024.0/1024/1024]);
+				
+			}
+		}
+	});
+	var values = Object.keys(running_data).map(function(key){
+		return running_data[key];
+	});
+	console.log(values);
+	data = [];
+	c = ['#0000FF','#00FF00','#FF0000','#FFFF00','#FF00FF','#00FFFF','#000000','#AAAAFF','#FFAAAA','#AAFFAA','#7F7F7F'];
+	for (var v in values) {
+		data1 = {data:values[v], color:c[v]};
+		data.push(data1);
+//		console.log(values[v]);
+	}
+	$.plot("#placeholder", data);
+	current_time+=(interval/1000.0);
+//	if(current_time > max_time) {
+//		current_time = 0;
+//		running_data = {};
+//	}
+	setTimeout(get_data, interval);
+}
+setTimeout(get_data, interval);
+
+</script>
+</head>
+<body>
+<div style="text-align:center;">
+<h1>Flow Bandwidth</h1>
+
+<p>Y axis in Gbps.</p>
+
+<div id="placeholder" style="width:700px;height:500px;"></div>
+</div>
+</body>
+</html>
+
