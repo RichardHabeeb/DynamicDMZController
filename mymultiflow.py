@@ -28,7 +28,7 @@ import threading
 # CONSTANTS
 #-------------------------------------------------------------------------
 FLOW_STATS_INTERVAL_SECS = 1
-THRESHOLD_IN_KBPS = 50 * 1024 / 8
+THRESHOLD_BITS_PER_SEC = 50 * 1024 * 1024
 FLOW_ENTRY_IDLE_TIMEOUT_SECS = 10
 FLOW_ENTRY_HARD_TIMEOUT_SECS = 800
 
@@ -67,7 +67,7 @@ class Flow(object):
             self.hardware_port = match.in_port
 
         self.bit_rates = [0] * Flow.RUNNING_AVERAGE_WINDOW
-        self.running_bit_rate_sum = 0
+        self.running_rate_sum = 0
         self.total_bytes = 0
 
     def __eq__(self, other):
@@ -84,17 +84,17 @@ class Flow(object):
         return (self.network_layer_src, self.network_layer_dst,
                self.tranport_layer_src, self.tranport_layer_dst, self.hardware_port)
 
-    def get_average_bit_rate(self):
-        return self.running_bit_rate_sum / Flow.RUNNING_AVERAGE_WINDOW
+    def get_average_rate(self):
+        return self.running_rate_sum / Flow.RUNNING_AVERAGE_WINDOW
 
-    def add_bit_rate(self, new_rate):
-        self.running_bit_rate_sum += new_rate - self.bit_rates.pop(0)
+    def add_rate(self, new_rate):
+        self.running_rate_sum += new_rate - self.bit_rates.pop(0)
         self.bit_rates.append(new_rate)
 
     def update_total_bytes_transferred(self, new_total):
-        transmission_rate = (new_total - self.total_bytes) / FLOW_STATS_INTERVAL_SECS
+        transmission_rate = 8 * (new_total - self.total_bytes) / FLOW_STATS_INTERVAL_SECS
         self.total_bytes = new_total
-        self.add_bit_rate(transmission_rate)
+        self.add_rate(transmission_rate)
 
 
 class SizeBasedDynamicDmzSwitch (object):
@@ -157,33 +157,24 @@ class SizeBasedDynamicDmzSwitch (object):
             current_flow = None
             if key in self.flows:
                 current_flow = self.flows[key]
-            else if key in self.dmz_flows:
+            elif key in self.dmz_flows:
                 current_flow = self.dmz_flows[key]
             else:
                 current_flow = self.flows[key] = Flow(f.match)
 
-
             current_flow.update_total_bytes_transferred(f.byte_count)
-            transmission_rate_kbps = current_flow.get_average_bit_rate()
+            transmission_rate_bits = current_flow.get_average_rate()
 
-            log.debug("Source: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %d" % (current_flow.network_layer_src,
-                                                                        current_flow.network_layer_src,
-                                                                        current_flow.transport_layer_src,
-                                                                        current_flow.transport_layer_dst,
-                                                                        current_flow.hardware_port,
-                                                                        current_flow.total_bytes,
-                                                                        transmission_rate_kbps * 8 / 1024 / 1024))
-
-            self._flow_bandwidths[key] = transmission_rate_kbps
+            self._flow_bandwidths[key] = transmission_rate_bits
 
             # Do not look for elephant flows coming from the DPI.
             if f.match.in_port == self._dpi_port:
                 continue
 
             # If Elephant flow is detected
-            if key not in self.dmz_flows and transmission_rate_kbps > THRESHOLD_IN_KBPS:
+            if not key in self.dmz_flows and transmission_rate_bits > THRESHOLD_BITS_PER_SEC:
                 self.dmz_flows[key] = current_flow
-                del self.flow[key]
+                del self.flows[key]
 
                 msg = of.ofp_flow_mod()
                 msg.match = f.match
@@ -193,19 +184,31 @@ class SizeBasedDynamicDmzSwitch (object):
                 if f.match.dl_dst in self.macToPort:
                     msg.actions.append(of.ofp_action_output(
                         port=self.macToPort[f.match.dl_dst]))
-                    log.debug("ELEPHANT FLOW REROUTED!")
+                    log.debug("ELEPHANT FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" % (current_flow.network_layer_src,
+                                                                                current_flow.network_layer_dst,
+                                                                                current_flow.transport_layer_src,
+                                                                                current_flow.transport_layer_dst,
+                                                                                current_flow.hardware_port,
+                                                                                current_flow.total_bytes,
+                                                                                transmission_rate_bits))
                 else:
                     msg.actions.append(
                         of.ofp_action_output(port=of.OFPP_FLOOD))
 
                 msg.command = of.OFPFC_MODIFY
                 self.connection.send(msg)
-            else if key in dmz_flows and transmission_rate_kbps < THRESHOLD_IN_KBPS:
+            elif key in self.dmz_flows and transmission_rate_bits < THRESHOLD_BITS_PER_SEC:
                 self.flows[key] = current_flow
                 del self.dmz_flows[key]
                 msg = of.ofp_flow_mod()
                 msg.match = f.match
-                log.debug("MOUSE FLOW REROUTED!")
+                log.debug("MOUSE FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" % (current_flow.network_layer_src,
+                                                                            current_flow.network_layer_dst,
+                                                                            current_flow.transport_layer_src,
+                                                                            current_flow.transport_layer_dst,
+                                                                            current_flow.hardware_port,
+                                                                            current_flow.total_bytes,
+                                                                            transmission_rate_bits))
                 msg.command = of.OFPFC_DELETE_STRICT
                 self.connection.send(msg)
 
