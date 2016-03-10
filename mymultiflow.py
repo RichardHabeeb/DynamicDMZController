@@ -51,7 +51,7 @@ _flood_delay = 0
 
 
 class Flow(object):
-    RUNNING_AVERAGE_WINDOW = 5
+    RUNNING_AVERAGE_WINDOW = 3
 
     def __init__(self, match=None):
         self.network_layer_src = None
