@@ -29,7 +29,7 @@ import threading
 # CONSTANTS
 #-------------------------------------------------------------------------
 FLOW_STATS_INTERVAL_SECS = 1
-THRESHOLD_BITS_PER_SEC = 50 * 1024 * 1024
+THRESHOLD_BITS_PER_SEC = 500 * 1024 * 1024
 FLOW_ENTRY_IDLE_TIMEOUT_SECS = 10
 FLOW_ENTRY_HARD_TIMEOUT_SECS = 800
 
