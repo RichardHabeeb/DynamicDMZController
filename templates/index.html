@@ -11,7 +11,7 @@ var running_data = {}; //array of arrays of x,y coords
 var interval = 200; //millisecond
 
 function get_data() {
-	$.ajax(url='http://129.130.45.205:5000/data').done(function(data) {
+	$.ajax(url='http://129.130.45.255:5000/data').done(function(data) {
 		var raw_data = JSON.parse(data);
 		for (var key in raw_data) {
 			if (raw_data.hasOwnProperty(key)) {
