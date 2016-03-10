@@ -17,6 +17,7 @@ import pox.openflow.libopenflow_01 as of
 from flask import Flask
 from flask import render_template
 import json
+import logging
 
 from utils import *
 import time
@@ -35,7 +36,11 @@ FLOW_ENTRY_HARD_TIMEOUT_SECS = 800
 #-------------------------------------------------------------------------
 # VARIABLES
 #-------------------------------------------------------------------------
+flask_log = logging.getLogger('werkzeug')
+flask_log.setLevel(logging.ERROR)
+
 log = core.getLogger()
+
 # We don't want to flood immediately when a switch connects.
 # Can be overriden on commandline.
 _flood_delay = 0

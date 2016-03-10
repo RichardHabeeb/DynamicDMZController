@@ -16,7 +16,7 @@ function get_data() {
 		for (var key in raw_data) {
 			if (raw_data.hasOwnProperty(key)) {
 				if(typeof(running_data[key]) === "undefined") running_data[key] = []
-					running_data[key].push([current_time, raw_data[key]*8/1024.0/1024/1024]);
+					running_data[key].push([current_time, raw_data[key]/1024.0/1024/1024]);
 			}
 		}
 	});
