@@ -51,7 +51,7 @@ _flood_delay = 0
 
 
 class Flow(object):
-    RUNNING_AVERAGE_WINDOW = 3
+    RUNNING_AVERAGE_WINDOW = 2
 
     def __init__(self, match=None):
         self.network_layer_src = None
@@ -59,14 +59,15 @@ class Flow(object):
         self.transport_layer_src = None
         self.transport_layer_dst = None
         self.hardware_port = None
-        if(match is not None and \
-            hasattr(match, 'nw_src') and \
-            hasattr(match, 'nw_dst') and \
-            hasattr(match, 'tp_src') and \
-            hasattr(match, 'tp_dst') and \
-            hasattr(match, 'in_port')):
+        self.match = match
+        if(match is not None and
+                hasattr(match, 'nw_src') and
+                hasattr(match, 'nw_dst') and
+                hasattr(match, 'tp_src') and
+                hasattr(match, 'tp_dst') and
+                hasattr(match, 'in_port')):
             self.network_layer_src = match.nw_src
-            self.network_layer_dst = match.nw_src
+            self.network_layer_dst = match.nw_dst
             self.transport_layer_src = match.tp_src
             self.transport_layer_dst = match.tp_dst
             self.hardware_port = match.in_port
@@ -76,7 +77,7 @@ class Flow(object):
         self.total_bytes = 0
 
     def __eq__(self, other):
-        if other == None:
+        if other is None:
             return False
         return \
             self.network_layer_src == other.network_layer_src and \
@@ -85,9 +86,21 @@ class Flow(object):
             self.tranport_layer_dst == other.tranport_layer_dst and \
             self.hardware_port == other.hardware_port
 
-    def get_key(self):
-        return (self.network_layer_src, self.network_layer_dst,
-               self.tranport_layer_src, self.tranport_layer_dst, self.hardware_port)
+    def get_flow_table_add_msg(self, port):
+        msg = of.ofp_flow_mod()
+        msg.match = self.match
+        msg.actions.append(of.ofp_action_output(port=port))
+        msg.command = of.OFPFC_MODIFY
+        msg.idle_timeout = FLOW_ENTRY_IDLE_TIMEOUT_SECS
+        msg.hard_timeout = FLOW_ENTRY_HARD_TIMEOUT_SECS
+        msg.priority = 10000
+        return msg
+
+    def get_flow_table_remove_msg(self):
+        msg = of.ofp_flow_mod()
+        msg.match = self.match
+        msg.command = of.OFPFC_DELETE_STRICT
+        return msg
 
     def get_average_rate(self):
         return self.running_rate_sum / Flow.RUNNING_AVERAGE_WINDOW
@@ -97,7 +110,8 @@ class Flow(object):
         self.bit_rates.append(new_rate)
 
     def update_total_bytes_transferred(self, new_total):
-        transmission_rate = 8 * (new_total - self.total_bytes) / FLOW_STATS_INTERVAL_SECS
+        transmission_rate = 8 * \
+            (new_total - self.total_bytes) / FLOW_STATS_INTERVAL_SECS
         self.total_bytes = new_total
         self.add_rate(transmission_rate)
 
@@ -155,7 +169,8 @@ class SizeBasedDynamicDmzSwitch (object):
 
         # look through all flows and look for elephant flows
         for f in event.stats:
-            # Create an identification key for this flow using the send/recieve ports and hardware interface
+            # Create an identification key for this flow using the send/recieve
+            # ports and hardware interface
             key = (f.match.nw_src, f.match.nw_dst,
                    f.match.tp_src, f.match.tp_dst, f.match.in_port)
 
@@ -181,41 +196,35 @@ class SizeBasedDynamicDmzSwitch (object):
                 self.dmz_flows[key] = current_flow
                 del self.flows[key]
 
-                msg = of.ofp_flow_mod()
-                msg.match = f.match
-                msg.idle_timeout = FLOW_ENTRY_IDLE_TIMEOUT_SECS
-                msg.hard_timeout = FLOW_ENTRY_HARD_TIMEOUT_SECS
-                msg.priority = 10000
                 if f.match.dl_dst in self.macToPort:
-                    msg.actions.append(of.ofp_action_output(
-                        port=self.macToPort[f.match.dl_dst]))
-                    log.debug("ELEPHANT FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" % (current_flow.network_layer_src,
-                                                                                current_flow.network_layer_dst,
-                                                                                current_flow.transport_layer_src,
-                                                                                current_flow.transport_layer_dst,
-                                                                                current_flow.hardware_port,
-                                                                                current_flow.total_bytes,
-                                                                                transmission_rate_bits))
+                    self.connection.send(
+                        current_flow.get_flow_table_add_msg(self.macToPort[f.match.dl_dst]))
                 else:
-                    msg.actions.append(
-                        of.ofp_action_output(port=of.OFPP_FLOOD))
+                    self.connection.send(
+                        current_flow.get_flow_table_add_msg(of.OFPP_FLOOD))
 
-                msg.command = of.OFPFC_MODIFY
-                self.connection.send(msg)
+                log.debug("ELEPHANT FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
+                          (current_flow.network_layer_src,
+                           current_flow.network_layer_dst,
+                           current_flow.transport_layer_src,
+                           current_flow.transport_layer_dst,
+                           current_flow.hardware_port,
+                           current_flow.total_bytes,
+                           transmission_rate_bits))
+
             elif key in self.dmz_flows and transmission_rate_bits < THRESHOLD_BITS_PER_SEC:
                 self.flows[key] = current_flow
                 del self.dmz_flows[key]
-                msg = of.ofp_flow_mod()
-                msg.match = f.match
-                log.debug("MOUSE FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" % (current_flow.network_layer_src,
-                                                                            current_flow.network_layer_dst,
-                                                                            current_flow.transport_layer_src,
-                                                                            current_flow.transport_layer_dst,
-                                                                            current_flow.hardware_port,
-                                                                            current_flow.total_bytes,
-                                                                            transmission_rate_bits))
-                msg.command = of.OFPFC_DELETE_STRICT
-                self.connection.send(msg)
+
+                self.connection.send(current_flow.get_flow_table_remove_msg())
+                log.debug("MOUSE FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
+                          (current_flow.network_layer_src,
+                           current_flow.network_layer_dst,
+                           current_flow.transport_layer_src,
+                           current_flow.transport_layer_dst,
+                           current_flow.hardware_port,
+                           current_flow.total_bytes,
+                           transmission_rate_bits))
 
     def _handle_PacketIn(self, event):
         packet = event.parsed
@@ -251,6 +260,7 @@ class SizeBasedDynamicDmzSwitch (object):
             Drops this packet and optionally installs a flow to continue
             dropping similar ones for a while
             """
+            log.debug("Dropping packet")
             if duration is not None:
                 if not isinstance(duration, tuple):
                     duration = (duration, duration)
@@ -265,14 +275,12 @@ class SizeBasedDynamicDmzSwitch (object):
                     msg.buffer_id = event.ofp.buffer_id
                     msg.in_port = event.port
                     self.connection.send(msg)
-                    log.debug("FLOW MODIFYING... DROPING FLOWS")
+
 
         self._dpi_port = getOpenFlowPort(self.connection, self.dpi_port)
 
-        if event.port != self._dpi_port:
+        if not packet.dst.is_multicast and event.port != self._dpi_port:
             self.macToPort[packet.src] = event.port
-            log.debug("Redirecting to DPI for %s.%i -> %s" %
-                      (packet.src, event.port, packet.dst))
             msg = of.ofp_flow_mod()
             msg.match = of.ofp_match.from_packet(packet, event.port)
             msg.idle_timeout = FLOW_ENTRY_IDLE_TIMEOUT_SECS
@@ -280,6 +288,8 @@ class SizeBasedDynamicDmzSwitch (object):
             msg.actions.append(of.ofp_action_output(port=self._dpi_port))
             msg.data = event.ofp
             self.connection.send(msg)
+            #log.debug("Create Flow Table Entry: %s:%s -> %s:%s, ingress interface: %s" %
+            #          (msg.match.nw_src, msg.match.tp_src, msg.match.nw_dst, msg.match.tp_dst, event.port))
             return
 
         if not self.transparent:
@@ -299,8 +309,6 @@ class SizeBasedDynamicDmzSwitch (object):
                                 (packet.src, packet.dst, dpid_to_str(event.dpid), port))
                     return
 
-                log.debug("installing flow for %s.%i -> %s.%i" %
-                          (packet.src, event.port, packet.dst, port))
                 msg = of.ofp_flow_mod()
                 msg.match = of.ofp_match.from_packet(packet, event.port)
                 msg.idle_timeout = FLOW_ENTRY_IDLE_TIMEOUT_SECS
@@ -308,6 +316,8 @@ class SizeBasedDynamicDmzSwitch (object):
                 msg.actions.append(of.ofp_action_output(port=port))
                 msg.data = event.ofp
                 self.connection.send(msg)
+                #log.debug("Create Flow Table Entry: %s:%s -> %s:%s, ingress interface: %s" %
+                #          (msg.match.nw_src, msg.match.tp_src, msg.match.nw_dst, msg.match.tp_dst, event.port))
 
 
 class l2_learning (object):
