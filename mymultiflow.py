@@ -86,7 +86,7 @@ class Flow(object):
             self.tranport_layer_dst == other.tranport_layer_dst and \
             self.hardware_port == other.hardware_port
 
-    def get_flow_table_add_msg(self, port):
+    def get_flow_table_mod_msg(self, port):
         msg = of.ofp_flow_mod()
         msg.match = self.match
         msg.actions.append(of.ofp_action_output(port=port))
@@ -198,10 +198,10 @@ class SizeBasedDynamicDmzSwitch (object):
 
                 if f.match.dl_dst in self.macToPort:
                     self.connection.send(
-                        current_flow.get_flow_table_add_msg(self.macToPort[f.match.dl_dst]))
+                        current_flow.get_flow_table_mod_msg(self.macToPort[f.match.dl_dst]))
                 else:
                     self.connection.send(
-                        current_flow.get_flow_table_add_msg(of.OFPP_FLOOD))
+                        current_flow.get_flow_table_mod_msg(of.OFPP_FLOOD))
 
                 log.debug("ELEPHANT FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
                           (current_flow.network_layer_src,
@@ -216,7 +216,7 @@ class SizeBasedDynamicDmzSwitch (object):
                 self.flows[key] = current_flow
                 del self.dmz_flows[key]
 
-                self.connection.send(current_flow.get_flow_table_remove_msg())
+                self.connection.send(current_flow.get_flow_table_mod_msg(self._dpi_port))
                 log.debug("MOUSE FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
                           (current_flow.network_layer_src,
                            current_flow.network_layer_dst,
