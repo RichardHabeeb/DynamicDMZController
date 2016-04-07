@@ -166,6 +166,7 @@ class SizeBasedDynamicDmzSwitch (object):
     def handle_flow_stats(self, event):
         self._dpi_port = getOpenFlowPort(self.connection, self.dpi_port)
         self._flow_bandwidths.clear()
+        current_time = time.time()
 
         # look through all flows and look for elephant flows
         for f in event.stats:
@@ -197,6 +198,7 @@ class SizeBasedDynamicDmzSwitch (object):
                 del self.flows[key]
 
                 if f.match.dl_dst in self.macToPort:
+                    current_flow.timeout = time.time() + 5 #TODO randomize
                     self.connection.send(
                         current_flow.get_flow_table_mod_msg(self.macToPort[f.match.dl_dst]))
                 else:
@@ -212,6 +214,7 @@ class SizeBasedDynamicDmzSwitch (object):
                            current_flow.total_bytes,
                            transmission_rate_bits))
 
+            #if a mouse flow was detected in the DMZ
             elif key in self.dmz_flows and transmission_rate_bits < THRESHOLD_BITS_PER_SEC:
                 self.flows[key] = current_flow
                 del self.dmz_flows[key]
@@ -225,6 +228,22 @@ class SizeBasedDynamicDmzSwitch (object):
                            current_flow.hardware_port,
                            current_flow.total_bytes,
                            transmission_rate_bits))
+
+            #check for DMZ timeouts
+            if key in self.dmz_flows and current_time >= current_flow.timeout:
+                self.flows[key] = current_flow
+                del self.dmz_flows[key]
+
+                self.connection.send(current_flow.get_flow_table_mod_msg(self._dpi_port))
+                log.debug("ELEPHANT FLOW KICKED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
+                          (current_flow.network_layer_src,
+                           current_flow.network_layer_dst,
+                           current_flow.transport_layer_src,
+                           current_flow.transport_layer_dst,
+                           current_flow.hardware_port,
+                           current_flow.total_bytes,
+                           transmission_rate_bits))
+
 
     def _handle_PacketIn(self, event):
         packet = event.parsed
