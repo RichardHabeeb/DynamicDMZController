@@ -18,7 +18,7 @@ from flask import Flask
 from flask import render_template
 import json
 import logging
-
+import random
 from utils import *
 import time
 import datetime
@@ -32,6 +32,7 @@ FLOW_STATS_INTERVAL_SECS = 1
 THRESHOLD_BITS_PER_SEC = 500 * 1024 * 1024
 FLOW_ENTRY_IDLE_TIMEOUT_SECS = 10
 FLOW_ENTRY_HARD_TIMEOUT_SECS = 800
+RANDOM_TIMEOUT = { 'min': 3, 'max': 10 }
 
 #-------------------------------------------------------------------------
 # VARIABLES
@@ -198,7 +199,7 @@ class SizeBasedDynamicDmzSwitch (object):
                 del self.flows[key]
 
                 if f.match.dl_dst in self.macToPort:
-                    current_flow.timeout = time.time() + 5 #TODO randomize
+                    current_flow.timeout = time.time() + random.randint(RANDOM_TIMEOUT['min'], RANDOM_TIMEOUT['max']) #TODO randomize
                     self.connection.send(
                         current_flow.get_flow_table_mod_msg(self.macToPort[f.match.dl_dst]))
                 else:
@@ -243,6 +244,7 @@ class SizeBasedDynamicDmzSwitch (object):
                            current_flow.hardware_port,
                            current_flow.total_bytes,
                            transmission_rate_bits))
+
 
 
     def _handle_PacketIn(self, event):
