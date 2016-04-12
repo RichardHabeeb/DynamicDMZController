@@ -61,6 +61,7 @@ class Flow(object):
         self.transport_layer_dst = None
         self.hardware_port = None
         self.match = match
+        self.sample_timeout = 0
         if(match is not None and
                 hasattr(match, 'nw_src') and
                 hasattr(match, 'nw_dst') and
@@ -194,12 +195,12 @@ class SizeBasedDynamicDmzSwitch (object):
                 continue
 
             # If Elephant flow is detected
-            if not key in self.dmz_flows and transmission_rate_bits > THRESHOLD_BITS_PER_SEC:
+            if not key in self.dmz_flows and transmission_rate_bits > THRESHOLD_BITS_PER_SEC and current_time >= current_flow.sample_timeout:
                 self.dmz_flows[key] = current_flow
                 del self.flows[key]
 
                 if f.match.dl_dst in self.macToPort:
-                    current_flow.timeout = time.time() + random.randint(RANDOM_TIMEOUT['min'], RANDOM_TIMEOUT['max']) #TODO randomize
+                    current_flow.timeout = current_time + random.randint(RANDOM_TIMEOUT['min'], RANDOM_TIMEOUT['max'])
                     self.connection.send(
                         current_flow.get_flow_table_mod_msg(self.macToPort[f.match.dl_dst]))
                 else:
@@ -234,6 +235,7 @@ class SizeBasedDynamicDmzSwitch (object):
             if key in self.dmz_flows and current_time >= current_flow.timeout:
                 self.flows[key] = current_flow
                 del self.dmz_flows[key]
+                current_flow.sample_timeout = current_time + random.randint(RANDOM_TIMEOUT['min'], RANDOM_TIMEOUT['max'])
 
                 self.connection.send(current_flow.get_flow_table_mod_msg(self._dpi_port))
                 log.debug("ELEPHANT FLOW KICKED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
