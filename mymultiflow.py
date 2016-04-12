@@ -200,7 +200,8 @@ class SizeBasedDynamicDmzSwitch (object):
                 del self.flows[key]
 
                 if f.match.dl_dst in self.macToPort:
-                    current_flow.timeout = current_time + random.randint(RANDOM_TIMEOUT['min'], RANDOM_TIMEOUT['max'])
+                    #current_flow.timeout = current_time + random.randint(RANDOM_TIMEOUT['min'], RANDOM_TIMEOUT['max'])
+                    current_flow.timeout = current_time + RANDOM_TIMEOUT['max'] # use a fixed timeout for experiments
                     self.connection.send(
                         current_flow.get_flow_table_mod_msg(self.macToPort[f.match.dl_dst]))
                 else:
@@ -235,7 +236,8 @@ class SizeBasedDynamicDmzSwitch (object):
             if key in self.dmz_flows and current_time >= current_flow.timeout:
                 self.flows[key] = current_flow
                 del self.dmz_flows[key]
-                current_flow.sample_timeout = current_time + random.randint(RANDOM_TIMEOUT['min'], RANDOM_TIMEOUT['max'])
+                #current_flow.sample_timeout = current_time + random.randint(RANDOM_TIMEOUT['min'], RANDOM_TIMEOUT['max'])
+                current_flow.sample_timeout = current_time + RANDOM_TIMEOUT['max'] # use a fixed timeout for experiments
 
                 self.connection.send(current_flow.get_flow_table_mod_msg(self._dpi_port))
                 log.debug("ELEPHANT FLOW KICKED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
