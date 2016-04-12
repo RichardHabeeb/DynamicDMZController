@@ -208,10 +208,11 @@ class SizeBasedDynamicDmzSwitch (object):
                     self.connection.send(
                         current_flow.get_flow_table_mod_msg(of.OFPP_FLOOD))
 
-                log.debug("ELEPHANT FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
-                          (current_flow.network_layer_src,
-                           current_flow.network_layer_dst,
+                log.debug("%s ELEPHANT FLOW REROUTED: %s:%s -> %s:%s, Inport: %d, Bytes: %d, Rate: %f" %
+                          (datetime.datetime.now(),
+                           current_flow.network_layer_src,
                            current_flow.transport_layer_src,
+                           current_flow.network_layer_dst,
                            current_flow.transport_layer_dst,
                            current_flow.hardware_port,
                            current_flow.total_bytes,
@@ -223,10 +224,11 @@ class SizeBasedDynamicDmzSwitch (object):
                 del self.dmz_flows[key]
 
                 self.connection.send(current_flow.get_flow_table_mod_msg(self._dpi_port))
-                log.debug("MOUSE FLOW REROUTED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
-                          (current_flow.network_layer_src,
-                           current_flow.network_layer_dst,
+                log.debug("%s MOUSE FLOW REROUTED: %s:%s -> %s:%s, Inport: %d, Bytes: %d, Rate: %f" %
+                          (datetime.datetime.now(),
+                           current_flow.network_layer_src,
                            current_flow.transport_layer_src,
+                           current_flow.network_layer_dst,
                            current_flow.transport_layer_dst,
                            current_flow.hardware_port,
                            current_flow.total_bytes,
@@ -240,10 +242,11 @@ class SizeBasedDynamicDmzSwitch (object):
                 current_flow.sample_timeout = current_time + RANDOM_TIMEOUT['max'] # use a fixed timeout for experiments
 
                 self.connection.send(current_flow.get_flow_table_mod_msg(self._dpi_port))
-                log.debug("ELEPHANT FLOW KICKED: %s->%s %s->%s, Inport: %d, Bytes: %d, Rate: %f" %
-                          (current_flow.network_layer_src,
-                           current_flow.network_layer_dst,
+                log.debug("%s ELEPHANT FLOW KICKED: %s:%s -> %s:%s, Inport: %d, Bytes: %d, Rate: %f" %
+                          (datetime.datetime.now(),
+                           current_flow.network_layer_src,
                            current_flow.transport_layer_src,
+                           current_flow.network_layer_dst,
                            current_flow.transport_layer_dst,
                            current_flow.hardware_port,
                            current_flow.total_bytes,
