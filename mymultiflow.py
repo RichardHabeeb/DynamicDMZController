@@ -135,6 +135,12 @@ class SizeBasedDynamicDmzSwitch (object):
         # to the connection
         connection.addListeners(self)
 
+        #Delete all flows to start off empty.
+        msg = of.ofp_flow_mod()
+        msg.match = of.ofp_match()
+        msg.command = of.OFPFC_DELETE_STRICT
+        self.connection.send(msg)
+
         # We just use this to know when to log a helpful message
         self.hold_down_expired = _flood_delay == 0
 
@@ -364,7 +370,7 @@ class l2_learning (object):
             event.connection, self.transparent, self.dpi_port)
 
 
-def launch(transparent=False, hold_down=_flood_delay, dpi_port='eth0'):
+def launch(transparent=False, hold_down=_flood_delay, dpi_port="Te 0/2"):
     """
     Starts an L2 learning switch.
     """
